@@ -1,5 +1,5 @@
-import logging
 import random
+import timeit
 import uuid
 from datetime import datetime, timedelta, time
 from typing import Callable
@@ -12,10 +12,9 @@ from ray import ObjectRef
 
 import constants
 
-logger = logging.getLogger(__name__)
-
 ray.init(num_cpus=constants.NUM_EXECUTING_CPUS)
 
+start = timeit.default_timer()
 
 def generate_strings(generator: Callable[..., str], size: int) -> ObjectRef:
     return ray.put([generator() for _ in range(size)])
@@ -86,3 +85,7 @@ for _ in range(constants.NUM_CPUS // constants.NUM_EXECUTING_CPUS):
         v.append(generate_data.remote(k, constants.NUM_EVENTS // constants.NUM_CPUS))
 
     ray.get(v)
+
+end = timeit.default_timer()
+
+print(f"Time taken: {end - start} seconds")
