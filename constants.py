@@ -6,7 +6,8 @@ logger = logging.getLogger(__name__)
 
 
 NUM_GPUS = 1
-NUM_CPUS = 8
+NUM_CPUS = 1000
+NUM_EXECUTING_CPUS = 16
 
 NUM_EVENT_NAMES = 1000
 NUM_USERS = 2_000_000

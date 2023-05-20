@@ -1,25 +1,24 @@
+import logging
 import random
 import uuid
 from datetime import datetime, timedelta, time
 from typing import Callable
 
-import pandas as pd
 import pyarrow as pa
 import pyarrow.parquet as pq
 import randomname
 import ray
-from ray.data.random_access_dataset import RandomAccessDataset
+from ray import ObjectRef
 
 import constants
 
-ray.init()
+logger = logging.getLogger(__name__)
+
+ray.init(num_cpus=constants.NUM_EXECUTING_CPUS)
 
 
-def generate_strings(name, generator: Callable[..., str], size: int) -> RandomAccessDataset:
-    ds = ray.data.range_table(size)
-    ds = ds.add_column(name, lambda b: pd.Series([generator() for _ in range(len(b))]))
-
-    return ds.to_random_access_dataset(key="value", num_workers=constants.NUM_CPUS)
+def generate_strings(generator: Callable[..., str], size: int) -> ObjectRef:
+    return ray.put([generator() for _ in range(size)])
 
 
 def random_date(start_date: datetime, end_date: datetime) -> datetime:
@@ -45,35 +44,45 @@ def random_datetime() -> datetime:
     return datetime.combine(date, tme)
 
 
-user_ids = generate_strings("user_id", lambda: str(uuid.uuid4()), constants.NUM_USERS)
-event_names = generate_strings("event_name", lambda: randomname.get_name(sep=""), constants.NUM_EVENT_NAMES)
+user_ids = generate_strings(lambda: str(uuid.uuid4()), constants.NUM_USERS)
+event_names = generate_strings(lambda: randomname.get_name(sep=""), constants.NUM_EVENT_NAMES)
 
 
 @ray.remote
-def generate_data(size: int) -> pa.Table:
+def generate_data(k: int, size: int) -> None:
     e = []
     t = []
     u = []
+
+    _event_names = ray.get(event_names)
+    _user_ids = ray.get(user_ids)
+
+    print(f"Generating %s rows of data %s", size, k)
 
     # Generate `size` rows of data
     for i in range(size):
         ev_fetch = -1 + random.randint(1, constants.NUM_EVENT_NAMES)
         u_fetch = -1 + random.randint(1, constants.NUM_USERS)
 
-        e.append((ray.get(event_names.get_async(ev_fetch)) or {}).get("event_name", randomname.get_name(sep="")))
+        e.append(_event_names[ev_fetch])
         t.append(random_datetime())
-        u.append((ray.get(user_ids.get_async(u_fetch)) or {}).get("user_id", str(uuid.uuid4())))
+        u.append(_user_ids[u_fetch])
+
+    print(f"Generated %s rows of data %s", size, k)
 
     columns = ["event_name", "timestamp", "user_id"]
-    return pa.table([e, t, u], names=columns)
+    table = pa.table([e, t, u], names=columns)
+
+    print(f"Writing %s rows of data %s", size, k)
+
+    pq.write_table(table, f"pq/data_{k}.parquet")
 
 
-# Generate data in parallel
-tasks = [generate_data.remote(constants.NUM_EVENTS // constants.NUM_CPUS) for _ in range(constants.NUM_CPUS)]
+k = 0
+for _ in range(constants.NUM_CPUS // constants.NUM_EXECUTING_CPUS):
+    v = []
+    for _ in range(constants.NUM_EXECUTING_CPUS):
+        k += 1
+        v.append(generate_data.remote(k, constants.NUM_EVENTS // constants.NUM_CPUS))
 
-# Combine the results into a single PyArrow table
-tables = ray.get(tasks)
-table = pa.concat_tables(tables)
-
-# table to compressed parquet
-pq.write_table(table, "data.parquet", compression="snappy")
+    ray.get(v)
