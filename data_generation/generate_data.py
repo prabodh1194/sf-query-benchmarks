@@ -4,6 +4,7 @@ import uuid
 from datetime import datetime, timedelta, time
 from typing import Callable
 
+import duckdb
 import pyarrow as pa
 import pyarrow.parquet as pq
 import randomname
@@ -15,6 +16,7 @@ import constants
 ray.init(num_cpus=constants.NUM_EXECUTING_CPUS)
 
 start = timeit.default_timer()
+
 
 def generate_strings(generator: Callable[..., str], size: int) -> ObjectRef:
     return ray.put([generator() for _ in range(size)])
@@ -89,3 +91,5 @@ for _ in range(constants.NUM_CPUS // constants.NUM_EXECUTING_CPUS):
 end = timeit.default_timer()
 
 print(f"Time taken: {end - start} seconds")
+
+duckdb.execute("COPY (SELECT * FROM 'pq/*.parquet') TO 'merge.parquet' (FORMAT 'parquet', COMPRESSION 'gzip');")

@@ -3,3 +3,5 @@ pyarrow
 ray[default, serve]
 randomname
 tqdm
+snowflake-connector-python
+duckdb
