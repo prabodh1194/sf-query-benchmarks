@@ -25,15 +25,15 @@ class PivotQueryInterface:
             cur.execute("USE DATABASE test")
             yield cur
 
-    def get_pivot_query(self):
+    def get_pivot_query(self) -> None:
         ...
 
     def main(self):
         start = time.perf_counter_ns()
-        qid = self.get_pivot_query()
+        self.get_pivot_query()
         end = time.perf_counter_ns()
 
-        print(f"Query ID: {qid}")
+        print(f"Query : {self.__class__.__name__}")
         print(f"Time taken: {(end - start) / 1e9} seconds")
 
 
@@ -48,7 +48,6 @@ class SuboptimalPivotQuery(PivotQueryInterface):
                 for event_name in ({','.join(self.get_unique_events(cur=cur))})
             )
             """)
-            return cur.sfqid
 
 
 class OptimalPivotQuery(PivotQueryInterface):
@@ -58,31 +57,26 @@ class OptimalPivotQuery(PivotQueryInterface):
         ]
 
         cur.execute(f"""
-            create or replace temporary table events_data_{idx} as
-            select user_id, {','.join(sum_queries)} from events_data group by user_id
+            create or replace transient table agg_events as
+            select * from agg_events a full outer join (select user_id, {','.join(sum_queries)} from events_data group by user_id) b using(user_id)
         """)
 
         return cur.sfqid
 
     def get_pivot_query(self):
         with self.cursor() as cur:
+            cur.execute("create or replace transient table agg_events as select distinct user_id from events_data")
+
             all_events = self.get_unique_events(cur=cur)
 
             # break into 10 chunks
             chunk_size = len(all_events) // 10
             chunks = [all_events[i:i + chunk_size] for i in range(0, len(all_events), chunk_size)]
 
-            tbls = []
-
             for chunk in enumerate(chunks):
                 self.get_batched_pivot_query(cur, *chunk)
-                tbls.append(f"full outer join events_data_{chunk[0]} using(user_id)")
-
-            cur.execute(f"""select * from events_data_0 {" ".join(tbls[1: ])}""")
-
-            return cur.session_id
 
 
 if __name__ == '__main__':
-    SuboptimalPivotQuery().main()
     OptimalPivotQuery().main()
+    SuboptimalPivotQuery().main()
