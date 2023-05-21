@@ -7,7 +7,7 @@ from typing import Sequence
 
 from snowflake.connector.cursor import SnowflakeCursor
 
-from snowflake_connection import con
+from snowflake_connection import get_connector
 
 logger = logging.getLogger(__name__)
 
@@ -20,7 +20,7 @@ class PivotQueryInterface:
 
     @contextmanager
     def cursor(self):
-        with con.cursor() as cur:
+        with get_connector().cursor() as cur:
             cur.execute("alter session set use_cached_result = false")
             cur.execute("USE DATABASE test")
             yield cur
@@ -51,7 +51,7 @@ class SuboptimalPivotQuery(PivotQueryInterface):
 
 
 class OptimalPivotQuery(PivotQueryInterface):
-    def get_batched_pivot_query(self, cur, idx, all_events):
+    def get_batched_pivot_query(self, cur, all_events):
         sum_queries = [
             f'sum(iff(event_name = {event}, 1, 0)) as "{event}"' for event in all_events
         ]
@@ -73,8 +73,8 @@ class OptimalPivotQuery(PivotQueryInterface):
             chunk_size = len(all_events) // 10
             chunks = [all_events[i:i + chunk_size] for i in range(0, len(all_events), chunk_size)]
 
-            for chunk in enumerate(chunks):
-                self.get_batched_pivot_query(cur, *chunk)
+            for chunk in chunks:
+                self.get_batched_pivot_query(cur, chunk)
 
 
 if __name__ == '__main__':

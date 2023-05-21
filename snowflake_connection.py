@@ -5,8 +5,11 @@ import logging
 from snowflake import connector
 
 logger = logging.getLogger(__name__)
-con = connector.Connect(
-    user='',
-    password='',
-    account='',
-)
+
+
+def get_connector():
+    return connector.Connect(
+        user='',
+        password='',
+        account='',
+    )

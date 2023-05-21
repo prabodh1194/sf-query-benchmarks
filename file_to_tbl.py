@@ -2,11 +2,11 @@ from __future__ import annotations
 
 import logging
 
-from snowflake_connection import con
+from snowflake_connection import get_connector
 
 logger = logging.getLogger(__name__)
 
-with con.cursor() as cur:
+with get_connector().cursor() as cur:
     cur.execute("CREATE DATABASE IF NOT EXISTS test")
     cur.execute("USE DATABASE test")
     cur.execute("CREATE STAGE IF NOT EXISTS test")
